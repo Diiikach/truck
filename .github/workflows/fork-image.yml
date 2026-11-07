@@ -8,7 +8,14 @@
 name: Fork image
 
 on:
+  # manual run is shown in the UI only when this file is in the default branch
   workflow_dispatch:
+  push:
+    paths:
+      - Dockerfile
+      - docker-compose.yaml
+      - requirements.txt
+      - .github/workflows/fork-image.yml
 
 concurrency:
   group: ${{ github.workflow }}
@@ -17,6 +24,7 @@ concurrency:
 jobs:
   build-image:
     name: Build and push image
+    if: github.repository != 'robotics-laboratory/truck'
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:

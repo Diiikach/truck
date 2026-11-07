@@ -49,7 +49,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull image
-        run: docker pull "${{ steps.names.outputs.image }}"
+        run: |
+          if ! docker pull "${{ steps.names.outputs.image }}"; then
+            echo "::error::Image ${{ steps.names.outputs.image }} not found." \
+              "Build it with the 'Fork image' workflow first, then re-run this job."
+            exit 1
+          fi
 
       - name: Build ROS2 packages
         run: |
