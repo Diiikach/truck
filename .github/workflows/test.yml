@@ -44,6 +44,8 @@ jobs:
   build-and-check:
     name: Build, test
     needs: extract-image
+    # self-hosted runner exists only in the main repository, forks use fork-test.yml
+    if: github.repository == 'robotics-laboratory/truck'
     runs-on: self-hosted
     container:
       image: ${{ needs.extract-image.outputs.image-url }}

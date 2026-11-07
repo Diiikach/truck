@@ -1,0 +1,88 @@
+# Fork-only: builds the dev image (linux/amd64) on GitHub runners and pushes it to
+# ghcr.io/<owner>/truck:<tag>, where <tag> is taken from docker-compose.yaml.
+#
+# The build is split into Dockerfile stages, every stage exports its layers to the
+# registry cache. A full build may not fit into one 6h job: if the job times out,
+# just re-run it, finished stages are taken from the cache.
+
+name: Fork image
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  build-image:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - name: Resolve image names
+        id: names
+        run: |
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          TAG=$(sed -n 's|.*image: "registry.robotics-lab.ru/truck:\(.*\)".*|\1|p' docker-compose.yaml)
+          test -n "$TAG"
+          echo "image=ghcr.io/${OWNER}/truck:${TAG}" | tee -a "$GITHUB_OUTPUT"
+          echo "cache=ghcr.io/${OWNER}/truck:cache-amd64" | tee -a "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build stage truck-common
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          target: truck-common
+          cache-from: type=registry,ref=${{ steps.names.outputs.cache }}
+          cache-to: type=registry,ref=${{ steps.names.outputs.cache }},mode=max
+
+      - name: Build stage truck-cuda-amd64 (OpenCV, PyTorch, RealSense)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          target: truck-cuda-amd64
+          cache-from: type=registry,ref=${{ steps.names.outputs.cache }}
+          cache-to: type=registry,ref=${{ steps.names.outputs.cache }},mode=max
+
+      - name: Build stage truck-ros (ROS 2 from source)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          target: truck-ros
+          cache-from: type=registry,ref=${{ steps.names.outputs.cache }}
+          cache-to: type=registry,ref=${{ steps.names.outputs.cache }},mode=max
+
+      - name: Build and push truck-dev
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          target: truck-dev
+          push: true
+          tags: ${{ steps.names.outputs.image }}
+          cache-from: type=registry,ref=${{ steps.names.outputs.cache }}
+          cache-to: type=registry,ref=${{ steps.names.outputs.cache }},mode=max
