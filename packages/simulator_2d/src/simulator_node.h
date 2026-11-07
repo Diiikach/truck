@@ -7,11 +7,12 @@
 #include "truck_msgs/msg/simulation_state.hpp"
 
 #include <nav_msgs/msg/odometry.hpp>
+#include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_msgs/msg/tf_message.hpp>
 #include <rosgraph_msgs/msg/clock.hpp>
-#include <sensor_msgs/msg/laser_scan.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 
 #include <rclcpp/rclcpp.hpp>
@@ -38,7 +39,7 @@ class SimulatorNode : public rclcpp::Node {
     void publishTransformMessage(const TruckState& truck_state);
     void publishTelemetryMessage(const TruckState& truck_state);
     void publishSimulationStateMessage(const TruckState& truck_state);
-    void publishLaserScanMessage(const TruckState& truck_state);
+    void publishLidarCloudMessage(const TruckState& truck_state);
     void publishImuMessage(const TruckState& truck_state);
     void publishSimulationState();
 
@@ -70,6 +71,10 @@ class SimulatorNode : public rclcpp::Node {
             float range_min;
             float range_max;
         } lidar_config;
+
+        // Simulated rays are measured along the truck heading, while the cloud is
+        // published in the lidar frame, which may be rotated relative to base.
+        tf2::Quaternion base_to_lidar_rotation = tf2::Quaternion::getIdentity();
     } cache_;
 
     struct Transforms {
@@ -87,7 +92,7 @@ class SimulatorNode : public rclcpp::Node {
         rclcpp::Publisher<tf2_msgs::msg::TFMessage>::SharedPtr tf_publisher = nullptr;
         rclcpp::Publisher<truck_msgs::msg::HardwareTelemetry>::SharedPtr telemetry = nullptr;
         rclcpp::Publisher<truck_msgs::msg::SimulationState>::SharedPtr state = nullptr;
-        rclcpp::Publisher<sensor_msgs::msg::LaserScan>::SharedPtr scan = nullptr;
+        rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr lidar_cloud = nullptr;
         rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu = nullptr;
     } signals_;
 

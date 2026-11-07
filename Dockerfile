@@ -429,18 +429,6 @@ RUN cd ${ROS_TMP} \
     --cmake-args -DBUILD_TESTING=OFF \
     && rm -rf /tmp/*
 
-ENV SLLIDAR_COMMIT=a64c75979d52ada7f646bc9505f6133c69e195ee
-
-RUN git clone https://github.com/Slamtec/sllidar_ros2.git \
-    && cd sllidar_ros2 \
-    && git checkout ${SLLIDAR_COMMIT} \
-    && source ${ROS_ROOT}/setup.bash \
-    && colcon build \
-    --merge-install \
-    --install-base ${ROS_ROOT} \
-    --cmake-args -DBUILD_TESTING=OFF \
-    && rm -rf /tmp/*
-
 FROM truck-ros AS truck-dev
 
 ARG TARGETPLATFORM  # Automatically set by docker buildx

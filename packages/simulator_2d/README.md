@@ -38,6 +38,8 @@ Lidar is a sensor that determines the distance from itself to obstacles by point
 
 ![This is an image](doc/svg/lidar.svg)
 
+The simulator node publishes the rays as a point cloud (`sensor_msgs/PointCloud2`, topic `/livox/lidar`, frame `lidar_link`, all points lie in the lidar plane), the same topic and frame as the real 3D lidar uses.
+
 The simulator engine generates a dummy message for the current localization of the car on the obstacle map. When loading the map, all obstacles are divided into segments. They are iterated when calculating an array of ranges. At each iteration, the polar angles of the lidar rays passing through the ends of this segment, rounded to the nearest value, are determined for the current segment. After that, all suitable rays are repeated in the nested loop, and the distance to the nearest obstacle is updated for each one.
 
 

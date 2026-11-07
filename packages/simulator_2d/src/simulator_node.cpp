@@ -5,6 +5,7 @@
 #include "common/math.h"
 #include "geom/msg.h"
 
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 #include <nlohmann/json.hpp>
@@ -88,8 +89,9 @@ void SimulatorNode::initializeTopicHandlers() {
     signals_.state = Node::create_publisher<truck_msgs::msg::SimulationState>(
         "/simulator/state", rclcpp::QoS(1).reliability(qos));
 
-    signals_.scan = Node::create_publisher<sensor_msgs::msg::LaserScan>(
-        "/lidar/scan", rclcpp::QoS(1).reliability(qos));
+    // same topic and frame as the real 3D lidar (livox), points lie in the lidar plane (z = 0)
+    signals_.lidar_cloud = Node::create_publisher<sensor_msgs::msg::PointCloud2>(
+        "/livox/lidar", rclcpp::QoS(1).reliability(qos));
 
     signals_.imu = Node::create_publisher<sensor_msgs::msg::Imu>(
         "/camera/imu", rclcpp::QoS(1).reliability(qos));
@@ -102,6 +104,7 @@ void SimulatorNode::initializeCache(const std::unique_ptr<model::Model>& model) 
         static_cast<float>(model->lidar().angle_increment.radians());
     cache_.lidar_config.range_min = model->lidar().range_min;
     cache_.lidar_config.range_max = model->lidar().range_max;
+    cache_.base_to_lidar_rotation = model->getLatestTranform("base", "lidar_link").getRotation();
 }
 
 void SimulatorNode::initializeEngine() {
@@ -256,18 +259,53 @@ void SimulatorNode::publishSimulationStateMessage(const TruckState& truck_state)
     signals_.state->publish(state_msg);
 }
 
-void SimulatorNode::publishLaserScanMessage(const TruckState& truck_state) {
-    sensor_msgs::msg::LaserScan scan_msg;
-    scan_msg.header.frame_id = "lidar_link";
-    scan_msg.header.stamp = truck_state.time();
-    scan_msg.angle_min = cache_.lidar_config.angle_min;
-    scan_msg.angle_max = cache_.lidar_config.angle_max;
-    scan_msg.angle_increment = cache_.lidar_config.angle_increment;
-    scan_msg.range_min = cache_.lidar_config.range_min;
-    scan_msg.range_max = cache_.lidar_config.range_max;
-    scan_msg.scan_time = params_.update_period;
-    scan_msg.ranges = truck_state.lidarRanges();
-    signals_.scan->publish(scan_msg);
+void SimulatorNode::publishLidarCloudMessage(const TruckState& truck_state) {
+    const auto& lidar = cache_.lidar_config;
+    const auto& ranges = truck_state.lidarRanges();
+
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    cloud_msg.header.frame_id = "lidar_link";
+    cloud_msg.header.stamp = truck_state.time();
+    cloud_msg.height = 1;
+    cloud_msg.is_dense = true;
+    cloud_msg.is_bigendian = false;
+
+    sensor_msgs::PointCloud2Modifier modifier(cloud_msg);
+    modifier.setPointCloud2FieldsByString(1, "xyz");
+    modifier.resize(ranges.size());
+
+    sensor_msgs::PointCloud2Iterator<float> x(cloud_msg, "x");
+    sensor_msgs::PointCloud2Iterator<float> y(cloud_msg, "y");
+    sensor_msgs::PointCloud2Iterator<float> z(cloud_msg, "z");
+
+    size_t points_count = 0;
+    for (size_t i = 0; i < ranges.size(); ++i) {
+        const float range = ranges[i];
+
+        // rays without hit have infinite (max float) range
+        if (!std::isfinite(range) || range < lidar.range_min || range > lidar.range_max) {
+            continue;
+        }
+
+        const double angle = lidar.angle_min + i * lidar.angle_increment;
+        const tf2::Vector3 point_base_oriented{range * std::cos(angle), range * std::sin(angle), 0};
+        const tf2::Vector3 point =
+            tf2::quatRotate(cache_.base_to_lidar_rotation, point_base_oriented);
+
+        *x = point.x();
+        *y = point.y();
+        *z = point.z();
+
+        ++x;
+        ++y;
+        ++z;
+        ++points_count;
+    }
+
+    modifier.resize(points_count);
+    cloud_msg.width = points_count;
+
+    signals_.lidar_cloud->publish(cloud_msg);
 }
 
 void SimulatorNode::publishImuMessage(const TruckState& truck_state) {
@@ -301,7 +339,7 @@ void SimulatorNode::publishSimulationState() {
     publishTransformMessage(truck_state);
     publishTelemetryMessage(truck_state);
     publishSimulationStateMessage(truck_state);
-    publishLaserScanMessage(truck_state);
+    publishLidarCloudMessage(truck_state);
     publishImuMessage(truck_state);
 }
 

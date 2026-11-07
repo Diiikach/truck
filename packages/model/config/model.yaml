@@ -76,11 +76,6 @@ tf_static:
 
   # specific frame names for simulator
 
-  - frame_id: "base"
-    child_frame_id: "rplidar_s2::lidar_link"
-    translation: { x: 0.0, y: 0.0, z: 0.0 }
-    rotation: { x: 0.0, y: 0.0, z: 0.0, w: 1.0 }
-
   - frame_id: "camera_gyro_optical_frame"
     child_frame_id: "d455::camera_imu_optical_frame"
     translation: { x: 0.0, y: 0.0, z: 0.0 }
