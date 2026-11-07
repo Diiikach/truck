@@ -6,6 +6,7 @@
 #include "geom/localization.h"
 #include "model/model.h"
 #include "speed/greedy_planner.h"
+#include "truck_msgs/msg/planner_status.hpp"
 #include "truck_msgs/msg/trajectory.hpp"
 #include "truck_msgs/msg/waypoints.hpp"
 
@@ -28,11 +29,18 @@ namespace truck::waypoint_follower {
 
 using namespace std::chrono_literals;
 
+// Command for the motion system derived from the planner status:
+// MOVE - follow the current path, STOP - publish empty trajectory (controller stops).
+enum class MotionCommand { kMove, kStop };
+
 class WaypointFollowerNode : public rclcpp::Node {
   public:
     WaypointFollowerNode();
 
   private:
+    void onPlannerStatus(truck_msgs::msg::PlannerStatus::SharedPtr msg);
+    MotionCommand motionCommand();
+
     void onWaypoint(geometry_msgs::msg::PointStamped::SharedPtr msg);
     void onOdometry(nav_msgs::msg::Odometry::SharedPtr msg);
     void onGrid(nav_msgs::msg::OccupancyGrid::SharedPtr msg);
@@ -54,6 +62,7 @@ class WaypointFollowerNode : public rclcpp::Node {
     struct Parameters {
         std::chrono::duration<double> period = 0.1s;
         double safety_margin = 0.3;
+        std::chrono::duration<double> planner_status_timeout = 1.0s;
     } params_{};
 
     speed::GreedyPlanner::Params speed_params_{};
@@ -74,6 +83,7 @@ class WaypointFollowerNode : public rclcpp::Node {
         rclcpp::Subscription<tf2_msgs::msg::TFMessage>::SharedPtr tf_static = nullptr;
         rclcpp::Subscription<visualization_msgs::msg::Marker>::SharedPtr path = nullptr;
         rclcpp::Subscription<std_msgs::msg::String>::SharedPtr reset_path = nullptr;
+        rclcpp::Subscription<truck_msgs::msg::PlannerStatus>::SharedPtr planner_status = nullptr;
     } slot_;
 
     struct Signals {
@@ -89,6 +99,10 @@ class WaypointFollowerNode : public rclcpp::Node {
         std::shared_ptr<collision::Map> distance_transform = nullptr;
         double scheduled_velocity = 0;
         geom::Poses path_poses;
+
+        truck_msgs::msg::PlannerStatus::SharedPtr planner_status = nullptr;
+        std::optional<rclcpp::Time> planner_status_time = std::nullopt;
+        MotionCommand command = MotionCommand::kStop;
     } state_;
 
     bool graph_planner_ = false;

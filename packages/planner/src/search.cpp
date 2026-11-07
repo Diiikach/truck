@@ -386,7 +386,20 @@ void Searcher::buildState() {
     prev_state_ = current_state_;
 }
 
-void Searcher::reset() { prev_state_.clear(); }
+void Searcher::reset() {
+    prev_state_.clear();
+    current_state_.clear();
+}
+
+bool Searcher::isPathCollisionFree() const {
+    for (const geom::Pose& pose : getPath()) {
+        if (checker_->distance(pose) < params_.min_obstacle_distance) {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 void Searcher::resetVertices() {
     open_set_.clear();

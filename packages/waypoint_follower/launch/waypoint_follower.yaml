@@ -18,6 +18,7 @@ launch:
     - { name: "use_sim_time", value: "$(var simulation)" }
     - { name: "model_config", value: "$(var model_config)" }
     - { name: "period", value: 0.1 }
+    - { name: "planner_status_timeout", value: 1.0 }
     - { name: "resolution", value: 0.02 }
     - { name: "check_in_distance", value: 0.30 }
     - { name: "safety_margin", value: 0.15 }

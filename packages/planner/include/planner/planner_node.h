@@ -6,7 +6,8 @@
 #include "model/model.h"
 #include "collision/collision_checker.h"
 
-#include <std_msgs/msg/bool.hpp>
+#include "truck_msgs/msg/planner_status.hpp"
+
 #include <std_msgs/msg/color_rgba.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/occupancy_grid.h>
@@ -61,7 +62,7 @@ class PlannerNode : public rclcpp::Node {
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr graph = nullptr;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr path = nullptr;
         rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr finish = nullptr;
-        rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr status = nullptr;
+        rclcpp::Publisher<truck_msgs::msg::PlannerStatus>::SharedPtr status = nullptr;
     } signal_;
 
     struct State {
@@ -75,7 +76,7 @@ class PlannerNode : public rclcpp::Node {
         std::optional<geom::Pose> ego_pose = std::nullopt;
         std::optional<geom::Square> finish_area = std::nullopt;
 
-        bool status = false;
+        uint8_t status = truck_msgs::msg::PlannerStatus::NO_PATH;
     } state_;
 
     struct Parameters {

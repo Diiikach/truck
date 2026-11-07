@@ -190,6 +190,9 @@ class Searcher {
     bool findPath();
     geom::Poses getPath() const;
 
+    // Checks the current path (the rest of it ahead of ego) against obstacles
+    bool isPathCollisionFree() const;
+
     void reset();
 
   private:

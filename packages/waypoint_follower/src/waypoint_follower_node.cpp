@@ -34,6 +34,8 @@ WaypointFollowerNode::WaypointFollowerNode() : Node("waypoint_follower") {
     params_ = {
         .period = std::chrono::duration<double>(this->declare_parameter("period", 0.1)),
         .safety_margin = this->declare_parameter("safety_margin", 0.3),
+        .planner_status_timeout =
+            std::chrono::duration<double>(this->declare_parameter("planner_status_timeout", 1.0)),
     };
 
     RCLCPP_INFO(this->get_logger(), "period: %.2fs", params_.period.count());
@@ -74,6 +76,9 @@ WaypointFollowerNode::WaypointFollowerNode() : Node("waypoint_follower") {
 
     slot_.path = this->create_subscription<visualization_msgs::msg::Marker>(
         "/path", 1, std::bind(&WaypointFollowerNode::onPath, this, _1));
+
+    slot_.planner_status = this->create_subscription<truck_msgs::msg::PlannerStatus>(
+        "/planner/status", 1, std::bind(&WaypointFollowerNode::onPlannerStatus, this, _1));
 
     using TfCallback = std::function<void(tf2_msgs::msg::TFMessage::SharedPtr)>;
 
@@ -199,8 +204,20 @@ void WaypointFollowerNode::publishTrajectory() {
 
     checker_->reset(*state_.distance_transform);
 
-    motion::Trajectory trajectory =
-        graph_planner_ ? makeTrajectory(state_.path_poses) : makeTrajectory(follower_->path());
+    const MotionCommand command = motionCommand();
+    if (command != state_.command) {
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Motion command: %s",
+            command == MotionCommand::kMove ? "MOVE" : "STOP");
+        state_.command = command;
+    }
+
+    motion::Trajectory trajectory;
+    if (command == MotionCommand::kMove) {
+        trajectory =
+            graph_planner_ ? makeTrajectory(state_.path_poses) : makeTrajectory(follower_->path());
+    }
     bool collision = false;
     for (auto& state : trajectory.states) {
         const double margin = checker_->distance(state.pose);
@@ -253,6 +270,46 @@ void WaypointFollowerNode::onRemovePath(std_msgs::msg::String::SharedPtr msg) {
     state_.path_poses.clear();
     follower_->reset();
     publishFullState();
+}
+
+void WaypointFollowerNode::onPlannerStatus(truck_msgs::msg::PlannerStatus::SharedPtr msg) {
+    using Status = truck_msgs::msg::PlannerStatus;
+
+    if (msg->status == Status::NO_PATH) {
+        state_.path_poses.clear();
+    }
+
+    state_.planner_status = std::move(msg);
+    state_.planner_status_time = this->now();
+}
+
+MotionCommand WaypointFollowerNode::motionCommand() {
+    using Status = truck_msgs::msg::PlannerStatus;
+
+    // without graph planner the path is built by follower itself from waypoints
+    if (!graph_planner_) {
+        return MotionCommand::kMove;
+    }
+
+    if (!state_.planner_status || !state_.planner_status_time) {
+        return MotionCommand::kStop;
+    }
+
+    const auto age = this->now() - *state_.planner_status_time;
+    if (age.seconds() > params_.planner_status_timeout.count()) {
+        RCLCPP_WARN_THROTTLE(
+            this->get_logger(), *this->get_clock(), 5000, "Planner status timeout, stop!");
+        return MotionCommand::kStop;
+    }
+
+    switch (state_.planner_status->status) {
+        case Status::NEW_PATH:
+        case Status::KEEP_PATH:
+            return state_.path_poses.empty() ? MotionCommand::kStop : MotionCommand::kMove;
+        case Status::NO_PATH:
+        default:
+            return MotionCommand::kStop;
+    }
 }
 
 std::optional<geom::Transform> WaypointFollowerNode::getLatestTranform(

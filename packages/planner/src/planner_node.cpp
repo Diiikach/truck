@@ -56,7 +56,7 @@ PlannerNode::PlannerNode() : Node("planner") {
 
     signal_.finish = this->create_publisher<visualization_msgs::msg::Marker>("/finish", 10);
 
-    signal_.status = this->create_publisher<std_msgs::msg::Bool>("/status", 10);
+    signal_.status = this->create_publisher<truck_msgs::msg::PlannerStatus>("/planner/status", 10);
 
     search::GridParams grid_params{
         .width = static_cast<size_t>(this->declare_parameter<int>("grid.width")),
@@ -294,9 +294,11 @@ void PlannerNode::publishFinish() const {
 }
 
 void PlannerNode::publishStatus() const {
-    std_msgs::msg::Bool flag;
-    flag.data = state_.status;
-    signal_.status->publish(flag);
+    truck_msgs::msg::PlannerStatus msg;
+    msg.header.stamp = now();
+    msg.header.frame_id = state_.odom ? state_.odom->header.frame_id : "odom_ekf";
+    msg.status = state_.status;
+    signal_.status->publish(msg);
 }
 
 void PlannerNode::publish() const {
@@ -333,9 +335,14 @@ void PlannerNode::doPlanningLoop() {
                                                      .setFinishArea(state_.finish_area.value())
                                                      .setCollisionChecker(checker_));
 
+    using Status = truck_msgs::msg::PlannerStatus;
+
     if (!state_.grid->build()) {
         RCLCPP_WARN(this->get_logger(), "Finish point is out of grid bounds!");
+        searcher_.reset();
+        state_.status = Status::NO_PATH;
         reset();
+        publishStatus();
         return;
     }
 
@@ -343,11 +350,16 @@ void PlannerNode::doPlanningLoop() {
     searcher_.setEdgeCache(edge_cache_);
     searcher_.setCollisionChecker(checker_);
 
-    if (!searcher_.findPath()) {
-        state_.status = false;
-        RCLCPP_WARN(this->get_logger(), "Path not found!");
+    if (searcher_.findPath()) {
+        state_.status = Status::NEW_PATH;
+    } else if (!searcher_.getPath().empty() && searcher_.isPathCollisionFree()) {
+        state_.status = Status::KEEP_PATH;
+        RCLCPP_WARN_THROTTLE(
+            this->get_logger(), *this->get_clock(), 1000, "Path not found, keep previous path");
     } else {
-        state_.status = true;
+        state_.status = Status::NO_PATH;
+        searcher_.reset();
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000, "Path not found!");
     }
 
     publish();
